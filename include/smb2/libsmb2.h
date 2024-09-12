@@ -1046,7 +1046,7 @@ int smb2_echo(struct smb2_context *smb2);
  * here to retain compatibility for apps that depend on those symbols.
  */
 #ifdef __APPLE__
-#include <libsmb2-dcerpc-srvsvc.h>
+#include <smb2/libsmb2-dcerpc-srvsvc.h>
 #else
 #include <smb2/libsmb2-dcerpc-srvsvc.h>	
 #endif
