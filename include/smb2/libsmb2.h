@@ -19,10 +19,6 @@
 #ifndef _LIBSMB2_H_
 #define _LIBSMB2_H_
 
-#ifdef __APPLE__ /* Some platforms doesn´t support stdint.h */
-#include <stdint.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,6 +37,35 @@ struct smb2_context;
  */
 typedef void (*smb2_command_cb)(struct smb2_context *smb2, int status,
                                 void *command_data, void *cb_data);
+
+/*
+ * callback for getting error information when errors are set
+ * command_data depends on status.
+ */
+typedef void (*smb2_error_cb)(struct smb2_context *smb2,
+                                const char *error_string);
+
+/*
+ * callback for server accepting a new connection
+ */
+typedef int (*smb2_accepted_cb)(const int fd, void *cb_data);
+
+/*
+ * callback when a new connection is made to setup context
+ */
+typedef void (*smb2_client_connection)(struct smb2_context *smb2, void *cb_data);
+
+/*
+ * callback when a server notifies of an oplock or lease break
+ * the type of break is determined from the stuct_size in the request
+ * (notification) passed in.  the app can set the new oplock level
+ * or new lease state for the acknowledgement that will be sent back
+ */
+typedef void (*smb2_oplock_or_lease_break_cb)(struct smb2_context *smb2,
+           int status,
+           struct smb2_oplock_or_lease_break_reply *rep,
+           uint8_t *new_oplock_level,
+           uint32_t *new_lease_state);
 
 /* Stat structure */
 #define SMB2_TYPE_FILE      0x00000000
@@ -88,7 +113,7 @@ struct smb2dirent {
 #include <winsock2.h>
 #endif
 #elif defined(_XBOX)
-#include <xtl.h> 
+#include <xtl.h>
 #include <winsockx.h>
 #endif
 
@@ -107,6 +132,15 @@ typedef int t_socket;
 struct smb2_context *smb2_init_context(void);
 
 /*
+ * Close an SMB2 context
+ *
+ * closes socket if open, and clears keys but leave
+ * context allocated.  the context will be destroyed
+ * at a time later when it won't be in-use
+ */
+void smb2_close_context(struct smb2_context *smb2);
+
+/*
  * Destroy an smb2 context.
  *
  * Any open "struct smb2fh" will automatically be freed. You can not reference
@@ -116,6 +150,17 @@ struct smb2_context *smb2_init_context(void);
  * Any pending async commands will be aborted with -ECONNRESET.
  */
 void smb2_destroy_context(struct smb2_context *smb2);
+
+/*
+ * Get the list of currently allocated contexts
+ */
+struct smb2_context *smb2_active_contexts(void);
+
+/*
+ * Determine of the context is currently active.  This lets
+ * code know if the context was destroyed in a callback for example
+ */
+int smb2_context_active(struct smb2_context *smb2);
 
 /*
  * EVENT SYSTEM INTEGRATION
@@ -221,6 +266,27 @@ int smb2_service_fd(struct smb2_context *smb2, t_socket fd, int revents);
 void smb2_set_timeout(struct smb2_context *smb2, int seconds);
 
 /*
+ * Set passthrough-enable.  Passthrough allows command packers
+ * and unpackers to keep the extra data on complex commands
+ * in its on-the-wire format without any interpretation. this
+ * is useful for proxy use cases where there might be no need
+ * to fully parse things like query-info replies or ioctl
+ * requests.  If passthrough is not set, any command that
+ * that is processed that can't interpret the data will fail
+ * Most client use case will not need this
+ *
+ * Default is 0: no-passthrough
+ */
+void smb2_set_passthrough(struct smb2_context *smb2,
+                      int passthrough);
+
+/*
+ * Get the current passthrough setting
+ */
+void smb2_get_passthrough(struct smb2_context *smb2,
+                      int *passthrough);
+
+/*
  * Set which version of SMB to negotiate.
  * Default is to let the server pick the version.
  */
@@ -232,13 +298,15 @@ enum smb2_negotiate_version {
         SMB2_VERSION_0210 = 0x0210,
         SMB2_VERSION_0300 = 0x0300,
         SMB2_VERSION_0302 = 0x0302,
-        SMB2_VERSION_0311 = 0x0311
+        SMB2_VERSION_0311 = 0x0311,
 };
+
+#define SMB2_VERSION_WILDCARD 0x02FF
 
 void smb2_set_version(struct smb2_context *smb2,
                       enum smb2_negotiate_version version);
 
-/* 
+/*
  * Sets which version libsmb2 uses.
 */
 #define LIBSMB2_MAJOR_VERSION 4
@@ -254,10 +322,15 @@ struct smb2_libversion
 
 /*
  * Gets the libsmb2 version being linked while used.
- * This function will be available on 5.x 
+ * This function will be available on 5.x
  * @param struct smb2_libversion
 */
 void smb2_get_libsmb2Version(struct smb2_libversion *smb2_ver);
+
+/*
+ * gets the (currently) negotiated dialect
+ */
+uint16_t smb2_get_dialect(struct smb2_context *smb2);
 
 /*
  * Set the security mode for the connection.
@@ -299,6 +372,44 @@ void smb2_set_user(struct smb2_context *smb2, const char *user);
  * This function is only needed when libsmb2 is built --without-libkrb5
  */
 void smb2_set_password(struct smb2_context *smb2, const char *password);
+
+/*
+ * Convert a win timestamp to a unix timeval
+ */
+void smb2_win_to_timeval(uint64_t smb2_time, struct smb2_timeval *tv);
+
+/*
+ * Convert unit timeval to a win timestamp
+ */
+time_t smb2_timeval_to_win(struct smb2_timeval *tv);
+
+/*
+ * set the context error string
+ */
+void smb2_set_error(struct smb2_context *smb2,
+                    const char *error_string, ...);
+
+/*
+ * Register an error callback, so any calls to smb2_set_error will call this
+ * function with the error string generated
+ */
+void smb2_register_error_callback(struct smb2_context *smb,
+                    smb2_error_cb error_cb);
+
+/*
+ * register for oplock or lease break callbacks
+ */
+void smb2_set_oplock_or_lease_break_callback(struct smb2_context *smb2,
+                    smb2_oplock_or_lease_break_cb cb);
+
+/*
+ * Set the smb2 context passworkd from a file (see NTLM_USER_FILE)
+ * depends on user/domain being already set in smb2 context
+ */
+#if !defined(_XBOX) && !defined(_IOP) && !defined(__amigaos4__) && !defined(__AMIGA__) && !defined(__AROS__)
+void smb2_set_password_from_file(struct smb2_context *smb2);
+#endif
+
 /*
  * Set the domain when authenticating.
  * This function is only needed when libsmb2 is built --without-libkrb5
@@ -321,6 +432,11 @@ void smb2_set_opaque(struct smb2_context *smb2, void *opaque);
  */
 void *smb2_get_opaque(struct smb2_context *smb2);
 
+
+/*
+ * Sets the client_guid for this context.
+ */
+void smb2_set_client_guid(struct smb2_context *smb2, const uint8_t guid[SMB2_GUID_SIZE]);
 
 /*
  * Returns the client_guid for this context.
@@ -405,6 +521,28 @@ int smb2_disconnect_share_async(struct smb2_context *smb2,
 int smb2_disconnect_share(struct smb2_context *smb2);
 
 /*
+ * Select a tree id that was previously connected. Sets the tree_id
+ * in the context to be used for subsequent requests
+ *
+ * Returns:
+ * 0      : OK
+ * -errno : tree wasn't connected
+ */
+int smb2_select_tree_id(struct smb2_context *smb2, uint32_t tree_id);
+
+struct smb2_pdu;
+
+/*
+ * Get/Set the tree id of a pdu
+ *
+ * Returns:
+ * 0      : OK
+ * -errno : tree wasn't connected | no pdu | no context
+ */
+int smb2_get_tree_id_for_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, uint32_t *tree_id);
+int smb2_set_tree_id_for_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu, uint32_t tree_id);
+
+/*
  * This function returns a description of the last encountered error.
  */
 const char *smb2_get_error(struct smb2_context *smb2);
@@ -414,7 +552,6 @@ int smb2_get_nterror(struct smb2_context *smb2);
 struct smb2_url {
         const char *domain;
         const char *user;
-        const char *password;
         const char *server;
         const char *share;
         const char *path;
@@ -442,7 +579,6 @@ int nterror_to_errno(uint32_t status);
 struct smb2_url *smb2_parse_url(struct smb2_context *smb2, const char *url);
 void smb2_destroy_url(struct smb2_url *url);
 
-struct smb2_pdu;
 /*
  * The functions are used when creating compound low level commands.
  * The general pattern for compound chains is
@@ -463,6 +599,7 @@ void smb2_add_compound_pdu(struct smb2_context *smb2,
                            struct smb2_pdu *pdu, struct smb2_pdu *next_pdu);
 void smb2_free_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu);
 void smb2_queue_pdu(struct smb2_context *smb2, struct smb2_pdu *pdu);
+int smb2_pdu_is_compound(struct smb2_context *smb2);
 
 /*
  * OPENDIR
@@ -563,6 +700,10 @@ struct smb2fh;
  * -errno : An error occurred.
  *          Command_data is NULL.
  */
+int smb2_open_async_with_oplock_or_lease(struct smb2_context *smb2, const char *path, int flags,
+                    uint8_t oplock_level, uint32_t lease_state, smb2_lease_key lease_key,
+                    smb2_command_cb cb, void *cb_data);
+
 int smb2_open_async(struct smb2_context *smb2, const char *path, int flags,
                     smb2_command_cb cb, void *cb_data);
 
@@ -1040,16 +1181,125 @@ int smb2_echo_async(struct smb2_context *smb2,
  */
 int smb2_echo(struct smb2_context *smb2);
 
+/* Utilities that help by being public
+*/
+
+/* SMB's UTF-16 is always in Little Endian */
+struct smb2_utf16 {
+        int len;
+        uint16_t val[1];
+};
+
+/* Returns a string converted to UTF-16 format. Use free() to release
+ * the utf16 string.
+ */
+struct smb2_utf16 *smb2_utf8_to_utf16(const char *utf8);
+
+/* Returns a string converted to UTF8 format. Use free() to release
+ * the utf8 string.
+ */
+const char *smb2_utf16_to_utf8(const uint16_t *str, size_t len);
+
+/************* Server-side API **********************************************/
+struct smb2_server;
+
+/* pdu handlers in general take the request from the client, and return
+ * < 0  on error, and the library should create an error reply
+ * == 0 on OK, and the library should use the reply struct (if needed) to create a reply
+ * > 0  if the handler created and queued a reply itself
+ */
+struct smb2_server_request_handlers {
+        int (*destruction_event)(struct smb2_server *srvr, struct smb2_context *smb2);
+        int (*authorize_user)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            const char *user,
+                            const char *domain,
+                            const char *workstation);
+        int (*session_established)(struct smb2_server *srvr, struct smb2_context *smb2);
+        int (*logoff_cmd)(struct smb2_server *srvr, struct smb2_context *smb2);
+        int (*tree_connect_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_tree_connect_request *req,
+                            struct smb2_tree_connect_reply *rep);
+        int (*tree_disconnect_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            const uint32_t tree_id);
+        int (*create_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_create_request *req,
+                            struct smb2_create_reply *rep);
+        int (*close_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_close_request *req,
+                            struct smb2_close_reply *rep);
+        int (*flush_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_flush_request *req);
+        int (*read_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_read_request *req,
+                            struct smb2_read_reply *rep);
+        int (*write_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_write_request *req,
+                            struct smb2_write_reply *rep);
+        int (*oplock_break_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_oplock_break_acknowledgement *req);
+        int (*lease_break_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_lease_break_acknowledgement *req);
+        int (*lock_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_lock_request *req);
+        int (*ioctl_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_ioctl_request *req,
+                            struct smb2_ioctl_reply *rep);
+        int (*cancel_cmd)(struct smb2_server *srvr, struct smb2_context *smb2);
+        int (*echo_cmd)(struct smb2_server *srvr, struct smb2_context *smb2);
+        int (*query_directory_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_query_directory_request *req,
+                            struct smb2_query_directory_reply *rep);
+        int (*change_notify_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_change_notify_request *req,
+                            struct smb2_change_notify_reply *rep);
+        int (*query_info_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_query_info_request *req,
+                            struct smb2_query_info_reply *rep);
+        int (*set_info_cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_set_info_request *req);
+        /*
+        int (*oplock_break cmd)(struct smb2_server *srvr, struct smb2_context *smb2,
+                            struct smb2_oplock_break_request *req);
+        */
+};
+
+struct smb2_server {
+        uint8_t guid[16];
+        char hostname[128];
+        char domain[128];
+        int fd;
+        uint16_t port;
+        uint64_t session_counter;
+        struct smb2_server_request_handlers *handlers;
+        uint32_t max_transact_size;
+        uint32_t max_read_size;
+        uint32_t max_write_size;
+        int signing_enabled;
+        int allow_anonymous;
+        /* saved from negotiate to be used in validate negotiate info */
+        uint32_t capabilities;
+        uint32_t security_mode;
+};
+
+int smb2_bind_and_listen(const uint16_t port, const int max_connections, int *out_fd);
+int smb2_accept_connection_async(const int fd, const int to_msecs, smb2_accepted_cb cb, void *cb_data);
+int smb2_serve_port_async(const int fd, const int to_msecs, struct smb2_context **out_smb2);
+
+/*
+ * Sync serve port()
+ *
+ * Returns
+ *  0     : The server is complete by exiting its loop normally (shouldnt happen)
+ * -errno : There was an error causing server loop to exit
+ */
+int smb2_serve_port(struct smb2_server *server, const int max_connections, smb2_client_connection cb, void *cb_data);
+
 /*
  * Some symbols have moved over to a different header file to allow better
  * separation between dcerpc and smb2, so we need to include this header
  * here to retain compatibility for apps that depend on those symbols.
  */
-#ifdef __APPLE__
 #include <smb2/libsmb2-dcerpc-srvsvc.h>
-#else
-#include <smb2/libsmb2-dcerpc-srvsvc.h>	
-#endif
 
 #ifdef __cplusplus
 }

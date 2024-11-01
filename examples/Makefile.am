@@ -1,7 +1,7 @@
 noinst_PROGRAMS = smb2-cat-async smb2-cat-sync \
 	smb2-dcerpc-coder-test \
 	smb2-ftruncate-sync \
-	smb2-ls-async smb2-ls-sync \
+	smb2-ls-async \
 	smb2-put-async \
 	smb2-put-sync \
 	smb2-raw-fsstat-async \
@@ -16,7 +16,8 @@ noinst_PROGRAMS = smb2-cat-async smb2-cat-sync \
 	smb2-statvfs-sync \
 	smb2-truncate-sync \
 	smb2-rename-sync \
-	smb2-CMD-FIND
+	smb2-CMD-FIND	\
+	smb2-server-sync
 
 AM_CPPFLAGS = \
 	-I$(abs_top_srcdir)/include \
@@ -30,7 +31,6 @@ smb2_cat_sync_LDADD = $(COMMON_LIBS)
 smb2_ftruncate_sync_LDADD = $(COMMON_LIBS)
 smb2_dcerpc_coder_test_LDADD = $(COMMON_LIBS)
 smb2_ls_async_LDADD = $(COMMON_LIBS)
-smb2_ls_sync_LDADD = $(COMMON_LIBS)
 smb2_put_async_LDADD = $(COMMON_LIBS)
 smb2_put_sync_LDADD = $(COMMON_LIBS)
 smb2_raw_fsstat_async_LDADD = $(COMMON_LIBS)
@@ -46,3 +46,5 @@ smb2_statvfs_sync_LDADD = $(COMMON_LIBS)
 smb2_truncate_sync_LDADD = $(COMMON_LIBS)
 smb2_rename_sync_LDADD = $(COMMON_LIBS)
 smb2_CMD_FIND_LDADD = $(COMMON_LIBS)
+smb2_server_sync_LDADD = $(COMMON_LIBS)
+

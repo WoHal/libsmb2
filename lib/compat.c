@@ -31,6 +31,19 @@
 #endif
 #define smb2_random rand
 #define smb2_srandom srand
+
+#ifdef _XBOX
+int gethostname(char *name, size_t len)
+{
+#ifdef XBOX_PLATFORM
+	    strncpy(name, "XBOX", len);
+#else
+        strncpy(name, "XBOX_360", len);
+#endif
+		return 0;
+}
+#endif
+
 #endif
 
 #ifdef __DREAMCAST__
@@ -111,6 +124,12 @@ struct MinList __filelist = { (struct MinNode *) &__filelist.mlh_Tail, NULL, (st
 #define getpid_num() 27
 
 static unsigned long int next = 1; 
+
+int gethostname(char *name, size_t len)
+{
+        strncpy(name, "PS2", len);
+        return 0;
+}
 
 time_t time(time_t *tloc)
 {
