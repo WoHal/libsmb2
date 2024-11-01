@@ -1,0 +1,92 @@
+diff --git a/cmake/ConfigureChecks.cmake b/cmake/ConfigureChecks.cmake
+index a28846a..b27f6c0 100644
+--- a/cmake/ConfigureChecks.cmake
++++ b/cmake/ConfigureChecks.cmake
+@@ -6,8 +6,8 @@ endif()
+ check_include_file("arpa/inet.h" HAVE_ARPA_INET_H)
+ check_include_file("dlfcn.h" HAVE_DLFCN_H)
+ check_include_file("fcntl.h" HAVE_FCNTL_H)
+-check_include_file("gssapi/gssapi.h" HAVE_GSSAPI_GSSAPI_H)
+-check_include_file("krb5/krb5.h" HAVE_LIBKRB5)
++# check_include_file("gssapi/gssapi.h" HAVE_GSSAPI_GSSAPI_H)
++# check_include_file("krb5/krb5.h" HAVE_LIBKRB5)
+ check_include_file("inttypes.h" HAVE_INTTYPES_H)
+ check_include_file("netdb.h" HAVE_NETDB_H)
+ check_include_file("netinet/in.h" HAVE_NETINET_IN_H)
+diff --git a/examples/smb2-lsa-lookupsids.c b/examples/smb2-lsa-lookupsids.c
+index 0356faa..a719b1e 100644
+--- a/examples/smb2-lsa-lookupsids.c
++++ b/examples/smb2-lsa-lookupsids.c
+@@ -53,7 +53,7 @@ void print_sid(RPC_SID *sid)
+                 ia <<= 8;
+                 ia |= sid->IdentifierAuthority[i];
+         }
+-        printf("%ld", ia);
++        printf("%llu", ia);
+         for (i = 0; i < sid->SubAuthorityCount; i++) {
+                 printf("-%d", sid->SubAuthority[i]);
+         }
+diff --git a/include/smb2/libsmb2.h b/include/smb2/libsmb2.h
+index 69bff27..5f9c4cb 100644
+--- a/include/smb2/libsmb2.h
++++ b/include/smb2/libsmb2.h
+@@ -414,6 +414,7 @@ int smb2_get_nterror(struct smb2_context *smb2);
+ struct smb2_url {
+         const char *domain;
+         const char *user;
++        const char *password;
+         const char *server;
+         const char *share;
+         const char *path;
+@@ -1045,7 +1046,7 @@ int smb2_echo(struct smb2_context *smb2);
+  * here to retain compatibility for apps that depend on those symbols.
+  */
+ #ifdef __APPLE__
+-#include <libsmb2-dcerpc-srvsvc.h>
++#include <smb2/libsmb2-dcerpc-srvsvc.h>
+ #else
+ #include <smb2/libsmb2-dcerpc-srvsvc.h>	
+ #endif
+diff --git a/include/smb2/smb2.h b/include/smb2/smb2.h
+index d11330f..eca5848 100644
+--- a/include/smb2/smb2.h
++++ b/include/smb2/smb2.h
+@@ -20,7 +20,7 @@
+ #define _SMB2_H_
+ 
+ #ifdef __APPLE__
+-#include <smb2-errors.h>
++#include <smb2/smb2-errors.h>
+ #else
+ #include <smb2/smb2-errors.h>
+ #endif
+diff --git a/lib/init.c b/lib/init.c
+index f248eea..e8ec8fa 100644
+--- a/lib/init.c
++++ b/lib/init.c
+@@ -217,8 +217,16 @@ struct smb2_url *smb2_parse_url(struct smb2_context *smb2, const char *url)
+         }
+         /* user */
+         if ((tmp = strchr(ptr, '@')) != NULL && strlen(tmp) > len_shared_folder) {
+-                *(tmp++) = '\0';              
++                *(tmp++) = '\0';
++
++                char *pwtmp;
++                /* password */
++                if ((pwtmp = strchr(ptr, ':')) != NULL) {
++                        *(pwtmp++) = '\0';
++                        u->password = strdup(pwtmp);
++                }
+                 u->user = strdup(ptr);
++
+                 ptr = tmp;
+         }
+         /* server */
+@@ -252,6 +260,7 @@ void smb2_destroy_url(struct smb2_url *url)
+         }
+         free(discard_const(url->domain));
+         free(discard_const(url->user));
++        free(discard_const(url->password));
+         free(discard_const(url->server));
+         free(discard_const(url->share));
+         free(discard_const(url->path));
