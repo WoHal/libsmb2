@@ -225,6 +225,12 @@ struct smb2_url *smb2_parse_url(struct smb2_context *smb2, const char *url)
         /* user */
         if ((tmp = strchr(ptr, '@')) != NULL && strlen(tmp) > len_shared_folder) {
                 *(tmp++) = '\0';
+                char *pwtmp;
+                /* password */
+                if ((pwtmp = strchr(ptr, ':')) != NULL) {
+                        *(pwtmp++) = '\0';
+                        u->password = strdup(pwtmp);
+                }
                 u->user = strdup(ptr);
                 ptr = tmp;
         }
@@ -259,6 +265,7 @@ void smb2_destroy_url(struct smb2_url *url)
         }
         free(discard_const(url->domain));
         free(discard_const(url->user));
+        free(discard_const(url->password));
         free(discard_const(url->server));
         free(discard_const(url->share));
         free(discard_const(url->path));
