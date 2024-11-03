@@ -227,13 +227,6 @@ struct smb2_url *smb2_parse_url(struct smb2_context *smb2, const char *url)
                 *(tmp++) = '\0';
                 u->user = strdup(ptr);
                 ptr = tmp;
-
-                if ((tmp = strchr(ptr, ':')) != NULL) {
-                        *(tmp++) = '\0';
-                        u->password = strdup(ptr);
-                        ptr = tmp;
-                }
-
         }
         /* server */
         if ((tmp = strchr(ptr, '/')) != NULL) {
@@ -266,7 +259,6 @@ void smb2_destroy_url(struct smb2_url *url)
         }
         free(discard_const(url->domain));
         free(discard_const(url->user));
-        free(discard_const(url->password));
         free(discard_const(url->server));
         free(discard_const(url->share));
         free(discard_const(url->path));
