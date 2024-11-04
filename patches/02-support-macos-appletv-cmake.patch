@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 470f0da..8a4b104 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -64,7 +64,7 @@ endif()
+ 
+   if(CMAKE_SYSTEM_NAME MATCHES Linux)
+     find_package(LibKrb5)
+-  elseif(IOS)
++  elseif(IOS OR CMAKE_SYSTEM_NAME MATCHES Darwin OR CMAKE_SYSTEM_NAME MATCHES tvOS OR CMAKE_SYSTEM_NAME MATCHES visionOS)
+     find_package(GSSAPI)  
+   endif()
+ 
